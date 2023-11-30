@@ -5,6 +5,8 @@ const dotenv = require("dotenv");
 dotenv.config();
 const path = require("path");
 const fs = require("fs/promises");
+const { body, validationResult } = require("express-validator");
+const multer = require("multer");
 
 const { User } = require("../models/user");
 
@@ -85,27 +87,71 @@ const logout = async (req, res) => {
   res.status(204).json();
 };
 
+// const updateAvatar = async (req, res) => {
+//   const { _id } = req.user;
+//   const { path: tempUpload, originalname } = req.file;
+//   const filename = `${_id}_${originalname}`;
+//   const resultUpload = path.join(avatarsDir, filename);
+//   await Jimp.read(tempUpload)
+//     .then((image) => image.resize(250, 250).write(resultUpload))
+//     .catch((e) => console.error(e))
+//     .finally(() => fs.unlink(tempUpload));
+//   const avatarURL = path.join("avatars", filename);
+//   await User.findByIdAndUpdate(_id, { avatarURL });
+
+//   res.json({
+//     avatarURL,
+//   });
+// };
+
 const updateAvatar = async (req, res) => {
   const { _id } = req.user;
   const { path: tempUpload, originalname } = req.file;
   const filename = `${_id}_${originalname}`;
   const resultUpload = path.join(avatarsDir, filename);
-  await Jimp.read(tempUpload)
-    .then((image) => image.resize(250, 250).write(resultUpload))
-    .catch((e) => console.error(e))
-    .finally(() => fs.unlink(tempUpload));
-  const avatarURL = path.join("avatars", filename);
-  await User.findByIdAndUpdate(_id, { avatarURL });
 
-  res.json({
-    avatarURL,
-  });
+  try {
+    await Jimp.read(tempUpload)
+      .then((image) => image.resize(250, 250).write(resultUpload))
+      .catch((e) => console.error(e))
+      .finally(() => fs.unlink(tempUpload));
+
+    const avatarURL = path.join("avatars", filename);
+    await User.findByIdAndUpdate(_id, { avatarURL });
+
+    res.json({
+      avatarURL,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 };
+
+const avatarUpload = multer({ dest: avatarsDir });
+
+const validateUpdateAvatar = [
+  avatarUpload.single("avatar"),
+  body("avatar").custom((value, { req }) => {
+    if (!req.file) {
+      throw new Error("Avatar file is required");
+    }
+    return true;
+  }),
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    next();
+  },
+];
 
 module.exports = {
   register: ctrlWrapper(register),
   login: ctrlWrapper(login),
   getCurrent: ctrlWrapper(getCurrent),
   logout: ctrlWrapper(logout),
-  updateAvatar: ctrlWrapper(updateAvatar),
+  // updateAvatar: ctrlWrapper(updateAvatar),
+  updateAvatar: [...validateUpdateAvatar, ctrlWrapper(updateAvatar)],
 };
